@@ -43,7 +43,7 @@ type CleaningTask struct {
 	Method        string     `gorm:"size:24" json:"method"`
 	PlanStartDate date.Date  `gorm:"type:date;index;not null" json:"planStartDate"`
 	PlanEndDate   date.Date  `gorm:"type:date;index;not null" json:"planEndDate"`
-	TeamName      string     `gorm:"size:64" json:"teamName"`
+	TeamName      string     `gorm:"size:64;index" json:"teamName"`
 	LeaderName    string     `gorm:"size:32" json:"leaderName"`
 	LeaderPhone   string     `gorm:"size:32" json:"leaderPhone"`
 	Status        string     `gorm:"size:16;index;not null;default:pending" json:"status"`

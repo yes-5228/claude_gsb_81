@@ -16,17 +16,47 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// List 任务列表。
+// List 任务列表（含与筛选结果同口径的数量 / 清淤量汇总）。
 func (h *Handler) List(c *fiber.Ctx) error {
 	query, err := ParseListQuery(c)
 	if err != nil {
 		return err
 	}
-	items, total, err := h.svc.List(c.UserContext(), query)
+	if err := query.Validate(); err != nil {
+		return err
+	}
+	items, total, summary, err := h.svc.ListPage(c.UserContext(), query)
 	if err != nil {
 		return err
 	}
-	return httpx.OKPage(c, items, total, query.Page.Page, query.Page.PageSize)
+	return httpx.OK(c, ListResponse{
+		List:     items,
+		Total:    total,
+		Page:     query.Page.Page,
+		PageSize: query.Page.PageSize,
+		Summary:  summary,
+	})
+}
+
+// FilterOptions 任务筛选栏可选项。
+func (h *Handler) FilterOptions(c *fiber.Ctx) error {
+	options, err := h.svc.FilterOptions(c.UserContext(), httpx.TrimmedQuery(c, "district"))
+	if err != nil {
+		return err
+	}
+	return httpx.OK(c, options)
+}
+
+// Export 按当前筛选条件导出全部任务为 CSV（含合计行）。
+func (h *Handler) Export(c *fiber.Ctx) error {
+	query, err := ParseListQuery(c)
+	if err != nil {
+		return err
+	}
+	if err := query.Validate(); err != nil {
+		return err
+	}
+	return h.writeExport(c, query)
 }
 
 // Create 登记任务。

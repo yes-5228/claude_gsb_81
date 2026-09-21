@@ -165,6 +165,26 @@ func (r *Repository) Districts(ctx context.Context) ([]string, error) {
 	return districts, err
 }
 
+// RoadOption 片区与道路的组合选项。
+type RoadOption struct {
+	District string `json:"district"`
+	RoadName string `json:"roadName"`
+}
+
+// RoadOptions 返回全部已使用的「片区 + 道路」组合。
+// district 非空时只返回该片区下的道路，供前端级联筛选。
+func (r *Repository) RoadOptions(ctx context.Context, district string) ([]RoadOption, error) {
+	options := make([]RoadOption, 0)
+	tx := r.db.WithContext(ctx).Model(&PipeSegment{}).
+		Select("DISTINCT district, road_name").
+		Where("road_name <> ''")
+	if district != "" {
+		tx = tx.Where("district = ?", district)
+	}
+	err := tx.Order("district ASC, road_name ASC").Scan(&options).Error
+	return options, err
+}
+
 // MarkCleaned 更新管段的清淤统计：次数 +1，最近清淤日期取更晚的一次。
 //
 // tx 可以为 nil；不为 nil 时在该事务内执行，供验收模块与验收记录写入保持原子性。

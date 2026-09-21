@@ -157,6 +157,24 @@ func (s *Service) History(ctx context.Context, id uint) ([]refx.HistoryItem, err
 	return items, nil
 }
 
+// RoadOptions 返回「片区 + 道路」组合选项（供任务列表筛选使用）。
+func (s *Service) RoadOptions(ctx context.Context, district string) ([]RoadOption, error) {
+	options, err := s.repo.RoadOptions(ctx, strings.TrimSpace(district))
+	if err != nil {
+		return nil, httpx.WrapInternal("查询道路选项失败", err)
+	}
+	return options, nil
+}
+
+// Districts 返回全部已使用的片区名称。
+func (s *Service) Districts(ctx context.Context) ([]string, error) {
+	districts, err := s.repo.Districts(ctx)
+	if err != nil {
+		return nil, httpx.WrapInternal("查询片区失败", err)
+	}
+	return districts, nil
+}
+
 // Options 下拉选项。
 func (s *Service) Options(ctx context.Context, keyword string) (*OptionsResponse, error) {
 	items, err := s.repo.Search(ctx, keyword, 100)

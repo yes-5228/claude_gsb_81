@@ -5,6 +5,8 @@
 
 const BASE_PATH = '/api/v1';
 
+export { BASE_PATH };
+
 export interface Envelope<T> {
   code: number;
   message: string;
@@ -89,4 +91,60 @@ export function toErrorMessage(error: unknown): string {
     return error.message;
   }
   return '发生未知错误，请稍后重试';
+}
+
+/**
+ * 下载文件（导出等场景）。
+ *
+ * 后端出错时仍返回统一信封 JSON，这里先按内容类型判断：JSON 走错误解析，
+ * 其余内容按文件落盘；文件名优先取 Content-Disposition。
+ */
+export async function downloadFile(url: string, fallbackFilename: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new ApiError('无法连接后端服务，请确认后端已启动', -1, 0);
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  if (!response.ok || contentType.includes('application/json')) {
+    const text = await response.text();
+    let message = `导出失败（HTTP ${response.status}）`;
+    try {
+      const envelope = JSON.parse(text) as Envelope<unknown>;
+      if (envelope.message) {
+        message = envelope.message;
+      }
+    } catch {
+      // 非 JSON 错误体，保留默认提示。
+    }
+    throw new ApiError(message, -1, response.status);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename = parseFilename(disposition) ?? fallbackFilename;
+
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function parseFilename(disposition: string): string | null {
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+  return plainMatch?.[1] ? plainMatch[1] : null;
 }

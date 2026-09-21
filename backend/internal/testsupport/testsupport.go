@@ -90,11 +90,17 @@ func NewFixture(t *testing.T) *Fixture {
 // CreateSegment 创建一条管段。
 func (s *Services) CreateSegment(t *testing.T, code, district string) *pipesegment.PipeSegment {
 	t.Helper()
+	return s.CreateSegmentOnRoad(t, code, district, "测试道路")
+}
+
+// CreateSegmentOnRoad 创建一条指定片区与道路的管段。
+func (s *Services) CreateSegmentOnRoad(t *testing.T, code, district, road string) *pipesegment.PipeSegment {
+	t.Helper()
 	segment, err := s.Segments.Create(context.Background(), pipesegment.SaveRequest{
 		Code:         code,
 		Name:         "测试管段 " + code,
 		District:     district,
-		RoadName:     "测试道路",
+		RoadName:     road,
 		PipeType:     pipesegment.TypeRainwater,
 		Material:     "concrete",
 		DiameterMm:   600,
@@ -125,6 +131,16 @@ func (s *Services) CreateTask(t *testing.T, segmentID uint, title string) *clean
 		LeaderName:    "测试负责人",
 		LeaderPhone:   "0571-88888888",
 	})
+	if err != nil {
+		t.Fatalf("创建测试任务失败: %v", err)
+	}
+	return task
+}
+
+// CreateTaskWith 按自定义字段创建任务，用于列表筛选 / 汇总测试。
+func (s *Services) CreateTaskWith(t *testing.T, req cleaningtask.SaveRequest) *cleaningtask.CleaningTask {
+	t.Helper()
+	task, err := s.Tasks.Create(context.Background(), req)
 	if err != nil {
 		t.Fatalf("创建测试任务失败: %v", err)
 	}

@@ -482,6 +482,123 @@ h3 {
   margin-left: auto;
 }
 
+/* ---------- 常用筛选 ---------- */
+.saved-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.saved-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saved-filter-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.saved-filter-empty {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.saved-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.saved-filter-apply {
+  border: none;
+  background: transparent;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.saved-filter-apply:hover {
+  background: #eff6ff;
+}
+
+.saved-filter-remove {
+  border: none;
+  border-left: 1px solid var(--color-border);
+  background: transparent;
+  padding: 3px 8px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.saved-filter-remove:hover {
+  color: #b91c1c;
+}
+
+/* ---------- 筛选冲突提示 ---------- */
+.filter-conflict {
+  margin: 12px 18px 0;
+}
+
+/* ---------- 列表汇总条 ---------- */
+.summary-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: #f8fafc;
+  transition: opacity 0.15s ease;
+}
+
+.summary-strip-loading {
+  opacity: 0.55;
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-unit {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.summary-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 /* ---------- 表单元素 ---------- */
 .input,
 .select,

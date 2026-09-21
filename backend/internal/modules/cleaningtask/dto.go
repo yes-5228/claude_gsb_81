@@ -36,8 +36,10 @@ type ListQuery struct {
 	Keyword       string
 	Status        string
 	District      string
+	RoadName      string
 	Priority      string
 	Source        string
+	TeamName      string
 	PipeSegmentID uint
 	PlanFrom      *date.Date
 	PlanTo        *date.Date
@@ -50,8 +52,10 @@ func ParseListQuery(c *fiber.Ctx) (ListQuery, error) {
 		Keyword:       httpx.TrimmedQuery(c, "keyword"),
 		Status:        httpx.TrimmedQuery(c, "status"),
 		District:      httpx.TrimmedQuery(c, "district"),
+		RoadName:      httpx.TrimmedQuery(c, "roadName"),
 		Priority:      httpx.TrimmedQuery(c, "priority"),
 		Source:        httpx.TrimmedQuery(c, "source"),
+		TeamName:      httpx.TrimmedQuery(c, "teamName"),
 		PipeSegmentID: uint(c.QueryInt("pipeSegmentId", 0)),
 		Page:          httpx.ParsePage(c),
 	}
@@ -68,6 +72,17 @@ func ParseListQuery(c *fiber.Ctx) (ListQuery, error) {
 	return query, nil
 }
 
+// Validate 校验组合条件本身是否自洽。
+//
+// 筛选条件不会因为组合冲突而报 5xx，但起止日期颠倒属于明确的错误请求，
+// 直接返回 400 提示，避免静默返回空数据让用户误判。
+func (q ListQuery) Validate() error {
+	if q.PlanFrom != nil && q.PlanTo != nil && q.PlanTo.Before(*q.PlanFrom) {
+		return httpx.BadRequest("计划时间段截止日期不能早于开始日期")
+	}
+	return nil
+}
+
 func parseDateParam(c *fiber.Ctx, key, label string) (*date.Date, error) {
 	raw := httpx.TrimmedQuery(c, key)
 	if raw == "" {
@@ -78,6 +93,33 @@ func parseDateParam(c *fiber.Ctx, key, label string) (*date.Date, error) {
 		return nil, httpx.BadRequest(fmt.Sprintf("%s格式不正确，应为 YYYY-MM-DD", label))
 	}
 	return &parsed, nil
+}
+
+// ListSummary 与筛选结果严格一致的任务 / 清淤量汇总。
+//
+// 统计口径：当前全部筛选条件命中的任务集合（不受分页影响），
+// 清淤量取这些任务下全部清淤记录的合计。
+type ListSummary struct {
+	TaskCount      int64   `json:"taskCount"`
+	RecordCount    int64   `json:"recordCount"`
+	SludgeVolumeM3 float64 `json:"sludgeVolumeM3"`
+	CleanedLengthM float64 `json:"cleanedLengthM"`
+}
+
+// ListResponse 任务列表：分页数据 + 同口径汇总。
+type ListResponse struct {
+	List     []ListItem  `json:"list"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"pageSize"`
+	Summary  ListSummary `json:"summary"`
+}
+
+// FilterOptionsResponse 任务筛选栏可选项（片区 / 道路 / 班组）。
+type FilterOptionsResponse struct {
+	Districts []string                 `json:"districts"`
+	Roads     []pipesegment.RoadOption `json:"roads"`
+	Teams     []string                 `json:"teams"`
 }
 
 // ListItem 任务列表项：任务本体 + 管段信息 + 清淤汇总。

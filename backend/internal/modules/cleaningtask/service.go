@@ -22,6 +22,8 @@ import (
 type SegmentGateway interface {
 	FindByID(ctx context.Context, id uint) (*pipesegment.PipeSegment, error)
 	BriefsByIDs(ctx context.Context, ids []uint) (map[uint]pipesegment.Brief, error)
+	RoadOptions(ctx context.Context, district string) ([]pipesegment.RoadOption, error)
+	Districts(ctx context.Context) ([]string, error)
 }
 
 // Service 清淤任务业务逻辑。
@@ -127,7 +129,88 @@ func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64,
 	if len(tasks) == 0 {
 		return []ListItem{}, total, nil
 	}
+	items, err := s.enrich(ctx, tasks)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
 
+// ListPage 分页查询任务，并返回与筛选结果同口径的任务数 / 清淤量汇总。
+//
+// 列表数据与汇总在同一次请求内返回，汇总始终基于命中任务的全集，
+// 不随分页页码或 pageSize 变化，从数据来源上杜绝两者口径不一致。
+func (s *Service) ListPage(ctx context.Context, query ListQuery) ([]ListItem, int64, ListSummary, error) {
+	tasks, total, err := s.repo.List(ctx, query)
+	if err != nil {
+		return nil, 0, ListSummary{}, httpx.WrapInternal("查询清淤任务失败", err)
+	}
+	summary, err := s.repo.Summary(ctx, query)
+	if err != nil {
+		return nil, 0, ListSummary{}, httpx.WrapInternal("统计清淤任务汇总失败", err)
+	}
+	if len(tasks) == 0 {
+		return []ListItem{}, total, summary, nil
+	}
+	items, err := s.enrich(ctx, tasks)
+	if err != nil {
+		return nil, 0, ListSummary{}, err
+	}
+	return items, total, summary, nil
+}
+
+// ExportRows 返回全部命中任务（不分页）并补齐管段与清淤汇总，供 CSV 导出。
+// 与列表页共用同一套筛选条件，保证导出条数、合计与页面一致。
+func (s *Service) ExportRows(ctx context.Context, query ListQuery) ([]ListItem, ListSummary, error) {
+	tasks, err := s.repo.ListAll(ctx, query)
+	if err != nil {
+		return nil, ListSummary{}, httpx.WrapInternal("查询清淤任务失败", err)
+	}
+	summary, err := s.repo.Summary(ctx, query)
+	if err != nil {
+		return nil, ListSummary{}, httpx.WrapInternal("统计清淤任务汇总失败", err)
+	}
+	if len(tasks) == 0 {
+		return []ListItem{}, summary, nil
+	}
+	items, err := s.enrich(ctx, tasks)
+	if err != nil {
+		return nil, ListSummary{}, err
+	}
+	return items, summary, nil
+}
+
+// ExportBatch keyset 分批查询并补齐展示信息，供导出流式写出。
+func (s *Service) ExportBatch(ctx context.Context, query ListQuery, afterID uint, limit int) ([]ListItem, error) {
+	tasks, err := s.repo.ListBatch(ctx, query, afterID, limit)
+	if err != nil {
+		return nil, httpx.WrapInternal("查询清淤任务失败", err)
+	}
+	if len(tasks) == 0 {
+		return []ListItem{}, nil
+	}
+	return s.enrich(ctx, tasks)
+}
+
+// FilterOptions 返回筛选栏所需的片区 / 道路 / 班组可选项。
+func (s *Service) FilterOptions(ctx context.Context, district string) (*FilterOptionsResponse, error) {
+	districts, err := s.segments.Districts(ctx)
+	if err != nil {
+		return nil, httpx.WrapInternal("查询片区选项失败", err)
+	}
+	roads, err := s.segments.RoadOptions(ctx, district)
+	if err != nil {
+		return nil, httpx.WrapInternal("查询道路选项失败", err)
+	}
+	teams, err := s.repo.Teams(ctx)
+	if err != nil {
+		return nil, httpx.WrapInternal("查询班组选项失败", err)
+	}
+	return &FilterOptionsResponse{Districts: districts, Roads: roads, Teams: teams}, nil
+}
+
+// enrich 批量为任务补齐管段信息与清淤汇总。
+func (s *Service) enrich(ctx context.Context, tasks []CleaningTask) ([]ListItem, error) {
 	segmentIDs := make([]uint, 0, len(tasks))
 	taskIDs := make([]uint, 0, len(tasks))
 	for i := range tasks {
@@ -137,11 +220,11 @@ func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64,
 
 	briefs, err := s.segments.BriefsByIDs(ctx, segmentIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	totals, err := refx.TotalsByTaskIDs(ctx, s.repo.DB(), taskIDs)
 	if err != nil {
-		return nil, 0, httpx.WrapInternal("统计清淤量失败", err)
+		return nil, httpx.WrapInternal("统计清淤量失败", err)
 	}
 
 	items := make([]ListItem, 0, len(tasks))
@@ -153,7 +236,7 @@ func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64,
 		}
 		items = append(items, item)
 	}
-	return items, total, nil
+	return items, nil
 }
 
 // Detail 任务详情。

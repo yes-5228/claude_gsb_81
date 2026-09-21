@@ -174,6 +174,29 @@ export interface TaskListItem extends CleaningTask {
   recordTotals: RecordTotals;
 }
 
+/** 与筛选结果同口径的任务 / 清淤量汇总（不受分页影响）。 */
+export interface TaskListSummary {
+  taskCount: number;
+  recordCount: number;
+  sludgeVolumeM3: number;
+  cleanedLengthM: number;
+}
+
+export interface TaskListResult extends PageResult<TaskListItem> {
+  summary: TaskListSummary;
+}
+
+export interface RoadOption {
+  district: string;
+  roadName: string;
+}
+
+export interface TaskFilterOptions {
+  districts: string[];
+  roads: RoadOption[];
+  teams: string[];
+}
+
 export interface TaskDetail {
   task: CleaningTask;
   segment: SegmentBrief | null;
