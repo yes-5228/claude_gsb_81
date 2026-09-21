@@ -11,6 +11,9 @@ func Register(router fiber.Router, db *gorm.DB, segments SegmentGateway) *Servic
 	handler := NewHandler(svc)
 
 	group := router.Group("/cleaning-tasks")
+	// 固定路径要注册在 /:id 之前，避免被参数路由抢先匹配。
+	group.Get("/filter-options", handler.FilterOptions)
+	group.Get("/export", handler.Export)
 	group.Get("", handler.List)
 	group.Post("", handler.Create)
 	group.Get("/:id", handler.Detail)

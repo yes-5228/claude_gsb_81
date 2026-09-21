@@ -141,7 +141,9 @@ npm run dev            # http://localhost:5173
 | GET | `/api/v1/pipe-segments/:id` | 管段详情（含任务统计与最近任务） |
 | GET | `/api/v1/pipe-segments/:id/cleaning-history` | 管段清淤履历 |
 | POST/PUT/DELETE | `/api/v1/pipe-segments[/:id]` | 新增 / 修改 / 删除管段 |
-| GET | `/api/v1/cleaning-tasks` | 任务列表（`keyword` `status` `district` `priority` `source` `pipeSegmentId` `planFrom` `planTo`） |
+| GET | `/api/v1/cleaning-tasks` | 任务列表（`keyword` `status` `district` `roadName` `priority` `source` `teamName` `pipeSegmentId` `planFrom` `planTo`），响应含与筛选同源的 `summary`（任务数、清淤记录数、清淤量、清淤长度合计） |
+| GET | `/api/v1/cleaning-tasks/filter-options?district=` | 任务筛选下拉选项（全部片区、道路[可按片区收窄]、实际派工过的实施班组） |
+| GET | `/api/v1/cleaning-tasks/export` | 按当前筛选导出任务 CSV（含合计行，最多 10000 条，超限返回 `X-Export-Truncated: 1`） |
 | GET | `/api/v1/cleaning-tasks/:id` | 任务详情（含清淤汇总、验收结论、可执行动作） |
 | POST/PUT/DELETE | `/api/v1/cleaning-tasks[/:id]` | 登记 / 修改 / 删除任务 |
 | POST | `/api/v1/cleaning-tasks/:id/start` | 开工（待开工 → 清淤中） |

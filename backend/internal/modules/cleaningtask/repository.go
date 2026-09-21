@@ -113,8 +113,10 @@ func (r *Repository) TransitionTx(ctx context.Context, tx *gorm.DB, id uint, fro
 // List 分页查询任务。
 func (r *Repository) List(ctx context.Context, query ListQuery) ([]CleaningTask, int64, error) {
 	query.Page.Normalize()
+	filter := r.filtered(ctx, query)
+
 	var total int64
-	if err := r.filtered(ctx, query).Count(&total).Error; err != nil {
+	if err := filter.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -128,6 +130,38 @@ func (r *Repository) List(ctx context.Context, query ListQuery) ([]CleaningTask,
 		return nil, 0, err
 	}
 	return tasks, total, nil
+}
+
+// Count 返回筛选条件下的任务总数（不带分页）。
+func (r *Repository) Count(ctx context.Context, query ListQuery) (int64, error) {
+	var total int64
+	err := r.filtered(ctx, query).Count(&total).Error
+	return total, err
+}
+
+// Summary 按与 List 完全相同的筛选条件整体汇总清淤量，不分页。
+//
+// 单独调用 r.filtered 生成语句，不与分页查询共用 *gorm.DB，
+// 保证分页 LIMIT/OFFSET 不会串到汇总语句里。
+func (r *Repository) Summary(ctx context.Context, query ListQuery) (refx.SludgeSummary, error) {
+	return refx.SludgeSummaryForTasks(ctx, r.db, r.filtered(ctx, query))
+}
+
+// MaxExportRows 单次导出允许的最大条数，避免筛选范围过大时一次性把库拉爆。
+const MaxExportRows = 10000
+
+// All 返回符合筛选条件的全部任务（最多 MaxExportRows 条），导出时使用，
+// 排序与分页列表一致，保证导出的就是页面同一批数据。
+func (r *Repository) All(ctx context.Context, query ListQuery) ([]CleaningTask, error) {
+	tasks := make([]CleaningTask, 0)
+	err := r.filtered(ctx, query).
+		Order("plan_start_date DESC, id DESC").
+		Limit(MaxExportRows).
+		Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
 }
 
 func (r *Repository) filtered(ctx context.Context, query ListQuery) *gorm.DB {
@@ -151,11 +185,23 @@ func (r *Repository) filtered(ctx context.Context, query ListQuery) *gorm.DB {
 	if query.PipeSegmentID > 0 {
 		tx = tx.Where("pipe_segment_id = ?", query.PipeSegmentID)
 	}
+	// 片区、道路都挂在管段台账上，通过 EXISTS 子查询过滤，
+	// 避免 JOIN 管段表后任务行被放大，影响 COUNT 与清淤量汇总。
 	if query.District != "" {
-		subQuery := r.db.WithContext(ctx).Table(refx.TablePipeSegments).
-			Select("id").
-			Where("district = ?", query.District)
-		tx = tx.Where("pipe_segment_id IN (?)", subQuery)
+		tx = tx.Where(
+			"EXISTS (SELECT 1 FROM "+refx.TablePipeSegments+" s WHERE s.id = "+refx.TableCleaningTasks+".pipe_segment_id AND s.district = ?)",
+			query.District,
+		)
+	}
+	if road := strings.TrimSpace(query.RoadName); road != "" {
+		like := "%" + strings.ToLower(road) + "%"
+		tx = tx.Where(
+			"EXISTS (SELECT 1 FROM "+refx.TablePipeSegments+" s WHERE s.id = "+refx.TableCleaningTasks+".pipe_segment_id AND LOWER(s.road_name) LIKE ?)",
+			like,
+		)
+	}
+	if team := strings.TrimSpace(query.TeamName); team != "" {
+		tx = tx.Where("LOWER(team_name) LIKE ?", "%"+strings.ToLower(team)+"%")
 	}
 	if query.PlanFrom != nil {
 		tx = tx.Where("plan_start_date >= ?", query.PlanFrom.Time)
@@ -164,6 +210,42 @@ func (r *Repository) filtered(ctx context.Context, query ListQuery) *gorm.DB {
 		tx = tx.Where("plan_start_date <= ?", query.PlanTo.Time)
 	}
 	return tx
+}
+
+// FilterOptions 返回任务筛选下拉所需的片区、道路与实施班组。
+//
+// district 非空时道路只返回该片区下已建档的道路，供前端「片区 -> 道路」联动，
+// 避免选了片区又选到其他片区道路这种必然为空的组合；班组取自任务表中实际出现过的值。
+func (r *Repository) FilterOptions(ctx context.Context, district string) (FilterOptionsResponse, error) {
+	var options FilterOptionsResponse
+	err := r.db.WithContext(ctx).Table(refx.TablePipeSegments).
+		Where("district <> ''").
+		Distinct().
+		Order("district ASC").
+		Pluck("district", &options.Districts).Error
+	if err != nil {
+		return FilterOptionsResponse{}, err
+	}
+	roadQuery := r.db.WithContext(ctx).Table(refx.TablePipeSegments).
+		Where("road_name <> ''")
+	if district = strings.TrimSpace(district); district != "" {
+		roadQuery = roadQuery.Where("district = ?", district)
+	}
+	err = roadQuery.Distinct().
+		Order("road_name ASC").
+		Pluck("road_name", &options.Roads).Error
+	if err != nil {
+		return FilterOptionsResponse{}, err
+	}
+	err = r.db.WithContext(ctx).Model(&CleaningTask{}).
+		Where("team_name <> ''").
+		Distinct().
+		Order("team_name ASC").
+		Pluck("team_name", &options.Teams).Error
+	if err != nil {
+		return FilterOptionsResponse{}, err
+	}
+	return options, nil
 }
 
 // HasRecords 任务下是否已经有清淤记录。

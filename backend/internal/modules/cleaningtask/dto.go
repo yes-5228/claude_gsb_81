@@ -32,12 +32,17 @@ type CancelRequest struct {
 }
 
 // ListQuery 任务列表查询条件。
+//
+// 片区、道路通过关联管段过滤；PlanFrom/PlanTo 按计划开始日期收口，
+// 与列表的默认排序（计划开始日期倒序）口径一致。
 type ListQuery struct {
 	Keyword       string
 	Status        string
 	District      string
+	RoadName      string
 	Priority      string
 	Source        string
+	TeamName      string
 	PipeSegmentID uint
 	PlanFrom      *date.Date
 	PlanTo        *date.Date
@@ -50,8 +55,10 @@ func ParseListQuery(c *fiber.Ctx) (ListQuery, error) {
 		Keyword:       httpx.TrimmedQuery(c, "keyword"),
 		Status:        httpx.TrimmedQuery(c, "status"),
 		District:      httpx.TrimmedQuery(c, "district"),
+		RoadName:      httpx.TrimmedQuery(c, "roadName"),
 		Priority:      httpx.TrimmedQuery(c, "priority"),
 		Source:        httpx.TrimmedQuery(c, "source"),
+		TeamName:      httpx.TrimmedQuery(c, "teamName"),
 		PipeSegmentID: uint(c.QueryInt("pipeSegmentId", 0)),
 		Page:          httpx.ParsePage(c),
 	}
@@ -65,6 +72,11 @@ func ParseListQuery(c *fiber.Ctx) (ListQuery, error) {
 	}
 	query.PlanFrom = from
 	query.PlanTo = to
+
+	// 互相冲突的条件直接在页面上说明：起止日期颠倒不可能命中任何任务。
+	if from != nil && to != nil && from.After(*to) {
+		return ListQuery{}, httpx.BadRequest("筛选条件冲突：计划开始日期起不能晚于计划开始日期止")
+	}
 	return query, nil
 }
 
@@ -85,6 +97,25 @@ type ListItem struct {
 	CleaningTask
 	Segment      *pipesegment.Brief `json:"segment"`
 	RecordTotals refx.RecordTotals  `json:"recordTotals"`
+}
+
+// ListResponse 任务列表响应：分页数据 + 与当前筛选完全一致的顶部汇总。
+//
+// summary 由后端按同一套筛选条件整体聚合得出，与翻页无关，
+// 避免前端把当前页数据相加导致「翻页后合计变化」。
+type ListResponse struct {
+	List     []ListItem         `json:"list"`
+	Total    int64              `json:"total"`
+	Page     int                `json:"page"`
+	PageSize int                `json:"pageSize"`
+	Summary  refx.SludgeSummary `json:"summary"`
+}
+
+// FilterOptionsResponse 任务筛选项：已建档的片区、道路与实际派过工的实施班组。
+type FilterOptionsResponse struct {
+	Districts []string `json:"districts"`
+	Roads     []string `json:"roads"`
+	Teams     []string `json:"teams"`
 }
 
 // DetailResponse 任务详情：任务 + 管段 + 清淤汇总 + 验收结论 + 可执行操作。

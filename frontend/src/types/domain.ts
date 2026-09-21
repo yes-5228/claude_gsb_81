@@ -156,6 +156,30 @@ export interface RecordTotals {
   latestCleanedAt: string | null;
 }
 
+/** 列表筛选结果的整体汇总（任务数 + 清淤量），与分页无关。 */
+export interface TaskListSummary {
+  taskCount: number;
+  recordCount: number;
+  sludgeVolumeM3: number;
+  cleanedLengthM: number;
+}
+
+/** 任务列表响应：分页数据与顶部汇总同源返回。 */
+export interface TaskListResult {
+  list: TaskListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: TaskListSummary;
+}
+
+/** 任务筛选下拉选项。 */
+export interface TaskFilterOptions {
+  districts: string[];
+  roads: string[];
+  teams: string[];
+}
+
 export interface AcceptanceBrief {
   id: number;
   code: string;

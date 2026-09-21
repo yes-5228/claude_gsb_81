@@ -118,14 +118,29 @@ func (s *Service) FindByID(ctx context.Context, id uint) (*CleaningTask, error) 
 	return task, nil
 }
 
+// ListResult 列表查询结果：当前页数据、总数与整体汇总。
+type ListResult struct {
+	Items   []ListItem
+	Total   int64
+	Summary refx.SludgeSummary
+}
+
 // List 分页查询任务，并批量补齐管段信息与清淤汇总。
-func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64, error) {
+//
+// 顶部汇总按同一套筛选条件单独整体聚合，与翻页无关；
+// 分页数据与汇总来自同一个请求，不存在异步加载先后导致的口径偏差。
+func (s *Service) List(ctx context.Context, query ListQuery) (*ListResult, error) {
 	tasks, total, err := s.repo.List(ctx, query)
 	if err != nil {
-		return nil, 0, httpx.WrapInternal("查询清淤任务失败", err)
+		return nil, httpx.WrapInternal("查询清淤任务失败", err)
 	}
+	summary, err := s.repo.Summary(ctx, query)
+	if err != nil {
+		return nil, httpx.WrapInternal("统计清淤量失败", err)
+	}
+	result := &ListResult{Items: []ListItem{}, Total: total, Summary: summary}
 	if len(tasks) == 0 {
-		return []ListItem{}, total, nil
+		return result, nil
 	}
 
 	segmentIDs := make([]uint, 0, len(tasks))
@@ -137,11 +152,11 @@ func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64,
 
 	briefs, err := s.segments.BriefsByIDs(ctx, segmentIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	totals, err := refx.TotalsByTaskIDs(ctx, s.repo.DB(), taskIDs)
 	if err != nil {
-		return nil, 0, httpx.WrapInternal("统计清淤量失败", err)
+		return nil, httpx.WrapInternal("统计清淤量失败", err)
 	}
 
 	items := make([]ListItem, 0, len(tasks))
@@ -153,7 +168,74 @@ func (s *Service) List(ctx context.Context, query ListQuery) ([]ListItem, int64,
 		}
 		items = append(items, item)
 	}
-	return items, total, nil
+	result.Items = items
+	return result, nil
+}
+
+// FilterOptions 返回任务筛选下拉所需的片区、道路与实施班组。
+func (s *Service) FilterOptions(ctx context.Context, district string) (FilterOptionsResponse, error) {
+	options, err := s.repo.FilterOptions(ctx, district)
+	if err != nil {
+		return FilterOptionsResponse{}, httpx.WrapInternal("查询筛选选项失败", err)
+	}
+	return options, nil
+}
+
+// ExportRows 导出结果：当前筛选下的全部任务行 + 整体合计 + 是否因上限被截断。
+type ExportRows struct {
+	Items     []ListItem
+	Summary   refx.SludgeSummary
+	Total     int64
+	Truncated bool
+}
+
+// Export 返回符合筛选条件的全部任务（上限 MaxExportRows 条）及其整体汇总，
+// 与列表页、顶部汇总使用同一套筛选条件。
+func (s *Service) Export(ctx context.Context, query ListQuery) (*ExportRows, error) {
+	tasks, err := s.repo.All(ctx, query)
+	if err != nil {
+		return nil, httpx.WrapInternal("导出清淤任务失败", err)
+	}
+	summary, err := s.repo.Summary(ctx, query)
+	if err != nil {
+		return nil, httpx.WrapInternal("统计清淤量失败", err)
+	}
+	total, err := s.repo.Count(ctx, query)
+	if err != nil {
+		return nil, httpx.WrapInternal("统计清淤任务失败", err)
+	}
+
+	items := make([]ListItem, 0, len(tasks))
+	if len(tasks) > 0 {
+		segmentIDs := make([]uint, 0, len(tasks))
+		taskIDs := make([]uint, 0, len(tasks))
+		for i := range tasks {
+			taskIDs = append(taskIDs, tasks[i].ID)
+			segmentIDs = append(segmentIDs, tasks[i].PipeSegmentID)
+		}
+		briefs, err := s.segments.BriefsByIDs(ctx, segmentIDs)
+		if err != nil {
+			return nil, err
+		}
+		totals, err := refx.TotalsByTaskIDs(ctx, s.repo.DB(), taskIDs)
+		if err != nil {
+			return nil, httpx.WrapInternal("统计清淤量失败", err)
+		}
+		for i := range tasks {
+			task := tasks[i]
+			item := ListItem{CleaningTask: task, RecordTotals: totals[task.ID]}
+			if brief, ok := briefs[task.PipeSegmentID]; ok {
+				item.Segment = &brief
+			}
+			items = append(items, item)
+		}
+	}
+	return &ExportRows{
+		Items:     items,
+		Summary:   summary,
+		Total:     total,
+		Truncated: total > int64(len(tasks)),
+	}, nil
 }
 
 // Detail 任务详情。
